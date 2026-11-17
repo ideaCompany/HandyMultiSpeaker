@@ -16,6 +16,7 @@ mod llm_client;
 mod managers;
 mod meeting; // meetscribe
 mod memory;
+mod openai; // meetscribe
 mod overlay;
 mod paste_tx;
 pub mod portable;
@@ -795,6 +796,9 @@ pub fn run(cli_args: CliArgs) {
             meeting::postprocess::meeting_post_process_options,
             meeting::postprocess::meeting_set_post_process,
             meeting::settings::get_meeting_settings,
+            openai::settings::get_openai_settings,
+            openai::settings::set_openai_settings,
+            openai::settings::openai_key_status,
             meeting::settings::set_meeting_settings,
         ])
         .events(collect_events![

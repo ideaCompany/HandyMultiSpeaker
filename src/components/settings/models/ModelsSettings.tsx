@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { OpenAiModelCard } from "./OpenAiModelCard";
 import { useTranslation } from "react-i18next";
 import { RefreshCw } from "lucide-react";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -150,6 +151,9 @@ export const ModelsSettings: React.FC<ModelsSettingsProps> = ({
             {t("settings.models.changeLanguages")}
           </button>
         )}
+      </div>
+      <div className="mx-[12px] mb-[16px] flex-none">
+        <OpenAiModelCard />
       </div>
       <div className="mx-[12px] mb-[16px] flex-none empty:hidden">
         <RetiredModelsNotice />

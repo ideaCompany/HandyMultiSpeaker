@@ -322,7 +322,13 @@
     "modelUnloaded": "Model ontladen",
     "noModelDownloadRequired": "Geen model - Download vereist",
     "downloadSpeed": "{{speed}} MB/s",
-    "lockedWhileTranscribing": "Je kunt van model wisselen zodra het transcriberen in Geschiedenis klaar is."
+    "lockedWhileTranscribing": "Je kunt van model wisselen zodra het transcriberen in Geschiedenis klaar is.",
+    "openai": {
+      "name": "OpenAI {{model}}",
+      "cloud": "Cloud",
+      "description": "De nauwkeurigste spraak-naar-tekst van OpenAI. De audio gaat naar OpenAI; niets te downloaden.",
+      "activeHint": "Dicteren gaat via OpenAI. Kies hieronder een lokaal model om terug te schakelen."
+    }
   },
   "settings": {
     "modelSettings": {
@@ -928,6 +934,34 @@
         "python_sidecar": "Nemotron 3 Diarization (Python-prototype)",
         "auto": "Automatisch (native indien beschikbaar)",
         "native": "Nemotron 3 Diarization (native, Metal)"
+      },
+      "openai": {
+        "title": "OpenAI",
+        "key": {
+          "label": "OpenAI API-sleutel",
+          "found": "Gevonden ({{source}}).",
+          "missing": "Niet gevonden. Zet OPENAI_API_KEY, bewaar de sleutel in de keyring (service=openai, account=api-key) of vul hem in onder Nabewerking → OpenAI."
+        },
+        "languages": {
+          "label": "Gesproken talen",
+          "description": "ISO-codes van de talen die gesproken worden, bv. \"nl, en\". Gebruikt als de taal op automatisch staat."
+        },
+        "transcribeModel": {
+          "label": "Transcriptiemodel",
+          "description": "gpt-transcribe is het nauwkeurigste spraak-naar-tekstmodel van OpenAI."
+        },
+        "notes": {
+          "label": "AI-vergadernotities",
+          "description": "Na een vergadering een samenvatting met beslissingen en actiepunten naast de transcriptie schrijven."
+        },
+        "notesModel": {
+          "label": "Model voor notities",
+          "description": "Model dat de vergadernotities schrijft."
+        },
+        "finalPass": {
+          "label": "Laatste sprekerscontrole",
+          "description": "Na de vergadering opnieuw bepalen wie wanneer sprak op basis van de volledige opname. Veel nauwkeuriger dan de live labels; duurt ongeveer een derde van de vergaderduur."
+        }
       }
     }
   },
@@ -1051,6 +1085,7 @@
       "disabledHelp": "Om dit in meetings te gebruiken, open je het hoofdvenster van MeetScribe en ga je naar Instellingen → Geavanceerd. Zet Experimentele functies aan en zet daarna Naverwerking aan in de groep Experimenteel. Stel vervolgens een provider, model en API-sleutel in op de pagina Naverwerking die in de zijbalk verschijnt, en kies de optie hier opnieuw.",
       "progress": "Transcript opschonen… {{done}}/{{total}}",
       "savedTo": "Opgeschoond transcript opgeslagen"
-    }
+    },
+    "notesSaved": "Notities"
   }
 }

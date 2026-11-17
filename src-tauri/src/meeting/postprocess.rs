@@ -411,9 +411,12 @@ fn rename_outputs(output: &MeetingOutput, title: &str) -> Option<MeetingOutput> 
         return None;
     }
     log::info!("Meeting transcript renamed to {}", new_md.display());
-    let follow = |old: &Option<String>, extension: &str| {
+    let new_stem = new_md
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let follow_to = |old: &Option<String>, new: PathBuf| {
         let old = old.as_ref()?;
-        let new = new_md.with_extension(extension);
         if new.exists() {
             return Some(old.clone());
         }
@@ -425,9 +428,16 @@ fn rename_outputs(output: &MeetingOutput, title: &str) -> Option<MeetingOutput> 
             }
         }
     };
+    let follow =
+        |old: &Option<String>, extension: &str| follow_to(old, new_md.with_extension(extension));
     Some(MeetingOutput {
         json_path: follow(&output.json_path, "json"),
         audio_path: follow(&output.audio_path, "wav"),
+        // meetscribe: the OpenAI notes keep their `<transcript>_notes.md` name
+        notes_path: follow_to(
+            &output.notes_path,
+            new_md.with_file_name(format!("{new_stem}_notes.md")),
+        ),
         markdown_path: Some(new_md.to_string_lossy().into_owned()),
         error: output.error.clone(),
     })

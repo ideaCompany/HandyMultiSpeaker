@@ -916,12 +916,20 @@ impl TranscriptionManager {
     /// Transcribe a whole clip in batch: a re-transcribed history entry, or
     /// a file from the CLI.
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
+        // meetscribe: OpenAI dictation engine
+        if crate::openai::dictation_enabled(&self.app_handle) {
+            return crate::openai::transcribe_dictation(&self.app_handle, audio);
+        }
         self.complete(Instant::now(), audio, None)
     }
 
     /// Transcribe a finished recording: what its live decode produced, or a
     /// batch run of the whole recording when there is no live result.
     pub fn transcribe_recording(&self, samples: Vec<f32>) -> Result<String> {
+        // meetscribe: OpenAI dictation engine (no live decode was started)
+        if crate::openai::dictation_enabled(&self.app_handle) {
+            return crate::openai::transcribe_dictation(&self.app_handle, samples);
+        }
         let started = Instant::now();
         let live = self.finalize_live(samples.len())?;
         self.complete(started, samples, live)

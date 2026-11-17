@@ -974,10 +974,8 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 }
 },
 /**
- * Checks if the Mac is a laptop by detecting battery presence
- * 
- * This uses pmset to check for battery information.
- * Returns true if a battery is detected (laptop), false otherwise (desktop)
+ * Stub implementation for non-macOS platforms
+ * Always returns false since laptop detection is macOS-specific
  */
 async isLaptop() : Promise<Result<boolean, string>> {
     try {
@@ -1053,6 +1051,20 @@ async meetingSetPostProcess(mode: PostProcessMode, promptId: string | null) : Pr
 },
 async getMeetingSettings() : Promise<MeetingSettings> {
     return await TAURI_INVOKE("get_meeting_settings");
+},
+async getOpenaiSettings() : Promise<OpenAiSettings> {
+    return await TAURI_INVOKE("get_openai_settings");
+},
+async setOpenaiSettings(settings: OpenAiSettings) : Promise<Result<OpenAiSettings, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_openai_settings", { settings }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async openaiKeyStatus() : Promise<OpenAiKeyStatus> {
+    return await TAURI_INVOKE("openai_key_status");
 },
 async setMeetingSettings(settings: MeetingSettings) : Promise<Result<MeetingSettings, string>> {
     try {
@@ -1312,6 +1324,29 @@ sha256: string | null } } |
  */
 "Local"
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
+export type OpenAiKeyStatus = { found: boolean; 
+/**
+ * Where the key came from: "environment", "keyring" or "post-processing settings".
+ */
+source: string | null }
+export type OpenAiSettings = { 
+/**
+ * OpenAI is the selected transcription "model": dictation goes through `transcribe_model`
+ * instead of the local model (and meetings too, unless they pick their own model).
+ */
+dictation: boolean; transcribe_model: string; diarize_model: string; 
+/**
+ * After a meeting, re-label speakers from the whole recording (more accurate than live).
+ */
+final_pass: boolean; 
+/**
+ * Languages people speak (ISO 639-1), used when the language choice is "auto".
+ */
+languages: string[]; 
+/**
+ * Write AI meeting notes (summary, decisions, action items) next to the transcript.
+ */
+notes: boolean; notes_model: string }
 export type OverlayPosition = "top" | "bottom"
 /**
  * Which recording overlay to display. `Minimal` and `Live` share one base

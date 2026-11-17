@@ -80,6 +80,20 @@ impl TurnBuilder {
         }
     }
 
+    /// Replaces the open words starting in `[t0_ms, t1_ms)` with `words` (e.g. an utterance first
+    /// shown as one span, then split per speaker). Words already in locked turns are kept.
+    /// Call [`Self::refresh`] afterwards.
+    pub fn replace_span(
+        &mut self,
+        t0_ms: u64,
+        t1_ms: u64,
+        words: impl IntoIterator<Item = TimedWord>,
+    ) {
+        self.open_words
+            .retain(|w| !(w.t0_ms >= t0_ms && w.t0_ms < t1_ms));
+        self.add_words(words);
+    }
+
     /// Re-attributes open words against `activity`, locks settled turns and returns UI events.
     pub fn refresh(&mut self, activity: &SpeakerActivity) -> Vec<TurnEvent> {
         self.rebuild(activity, false)
@@ -234,6 +248,22 @@ mod tests {
         spec.iter()
             .map(|&(a, b, t)| TimedWord::new(a, b, t))
             .collect()
+    }
+
+    #[test]
+    fn a_span_shown_whole_can_be_split_per_speaker() {
+        let mut b = TurnBuilder::new(TurnConfig::default());
+        b.add_words(words(&[(0, 4_000, "hallo allemaal thanks")]));
+        b.refresh(&activity(4_000, 0, &[]));
+        b.replace_span(0, 4_000, words(&[(0, 2_000, "hallo allemaal"), (2_000, 4_000, "thanks")]));
+        b.finish(&activity(4_000, 4_000, &[(0, 2_000, 0), (2_000, 4_000, 1)]));
+        assert_eq!(
+            texts(&b),
+            vec![
+                (Some(0), "hallo allemaal".to_string(), true),
+                (Some(1), "thanks".to_string(), true)
+            ]
+        );
     }
 
     fn texts(b: &TurnBuilder) -> Vec<(Option<u8>, String, bool)> {
