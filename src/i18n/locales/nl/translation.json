@@ -1036,6 +1036,21 @@
     "copied": "Gekopieerd",
     "languageAuto": "Automatisch",
     "languageHint": "Taal die in de vergadering gesproken wordt. Kies er een als spraak in de verkeerde taal wordt uitgeschreven; geldt vanaf de volgende zin.",
-    "languageIgnored": "Het huidige vergadermodel (Parakeet TDT) bepaalt de taal altijd zelf, dus deze keuze heeft geen effect. Kies Nemotron 3.5 ASR of een Whisper-model onder Instellingen → Vergaderingen → Transcriptiemodel om een taal af te dwingen."
+    "languageIgnored": "Het huidige vergadermodel (Parakeet TDT) bepaalt de taal altijd zelf, dus deze keuze heeft geen effect. Kies Nemotron 3.5 ASR of een Whisper-model onder Instellingen → Vergaderingen → Transcriptiemodel om een taal af te dwingen.",
+    "postProcess": {
+      "label": "Naverwerking",
+      "hint": "Laat het naverwerkingsmodel het transcript opschonen: aarzelingen verwijderen en zelfcorrecties doorvoeren. Het exacte transcript blijft altijd bewaard.",
+      "mode": {
+        "off": "Uit",
+        "at_end": "Aan het einde van de meeting",
+        "continuous": "Doorlopend tijdens de meeting"
+      },
+      "noPrompts": "Nog geen prompts",
+      "showOriginal": "Origineel tonen",
+      "disabledTitle": "Naverwerking staat uit",
+      "disabledHelp": "Om dit in meetings te gebruiken, open je het hoofdvenster van MeetScribe en ga je naar Instellingen → Geavanceerd. Zet Experimentele functies aan en zet daarna Naverwerking aan in de groep Experimenteel. Stel vervolgens een provider, model en API-sleutel in op de pagina Naverwerking die in de zijbalk verschijnt, en kies de optie hier opnieuw.",
+      "progress": "Transcript opschonen… {{done}}/{{total}}",
+      "savedTo": "Opgeschoond transcript opgeslagen"
+    }
   }
 }

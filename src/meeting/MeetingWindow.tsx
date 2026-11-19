@@ -10,6 +10,8 @@ import { listen } from "@tauri-apps/api/event";
 import {
   commands,
   type MeetingStatus,
+  type PostProcessMode,
+  type PostProcessOptions,
   type SpeakerDto,
   type TurnDto,
 } from "@/bindings";
@@ -32,6 +34,27 @@ interface MeetingOutput {
   audio_path: string | null;
   error: string | null;
 }
+
+/** Emitted on `meeting:turn_cleaned`; `meeting` is that meeting's start time. */
+interface TurnCleaned {
+  meeting: number;
+  id: number;
+  text: string;
+}
+
+/** Emitted on `meeting:post_process` while a stopped meeting is cleaned up. */
+interface PostProcessProgress {
+  meeting: number;
+  done: number;
+  total: number;
+  finished: boolean;
+  path: string | null;
+  /** The meeting's files under their new, titled names. */
+  renamed: MeetingOutput | null;
+  error: string | null;
+}
+
+const POST_PROCESS_MODES: PostProcessMode[] = ["off", "at_end", "continuous"];
 
 interface SpeakerRenamed {
   speaker: number;
@@ -63,11 +86,16 @@ const hms = (ms: number) => {
   return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
 };
 
+const shownText = (turn: TurnDto, original: boolean) =>
+  original ? turn.text : (turn.cleaned ?? turn.text);
+
 /** Same layout as the saved Markdown transcript, with current speaker names. */
-const transcriptText = (turns: TurnDto[]) =>
+const transcriptText = (turns: TurnDto[], original: boolean) =>
   turns
     .filter((t) => t.text.trim().length > 0)
-    .map((t) => `**${t.label}** [${hms(t.start_ms)}]: ${t.text}`)
+    .map(
+      (t) => `**${t.label}** [${hms(t.start_ms)}]: ${shownText(t, original)}`,
+    )
     .join("\n\n");
 
 const upsert = (turns: TurnDto[], turn: TurnDto) => {
@@ -138,22 +166,55 @@ const MeetingWindow: React.FC = () => {
   const [now, setNow] = useState(Date.now());
   const [copied, setCopied] = useState(false);
   const [language, setLanguage] = useState("auto");
+  const [mode, setMode] = useState<PostProcessMode>("off");
+  const [promptId, setPromptId] = useState<string | null>(null);
+  const [options, setOptions] = useState<PostProcessOptions | null>(null);
+  const [showEnableHelp, setShowEnableHelp] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [cleanup, setCleanup] = useState<PostProcessProgress | null>(null);
+  // start time of the meeting on screen; late results of an earlier one are dropped
+  const meetingId = useRef<number | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
   // initial state for a window opened mid-meeting, then live events
   useEffect(() => {
     commands.meetingStatus().then(setStatus);
-    commands.getMeetingSettings().then((s) => setLanguage(s.language));
+    commands.meetingStatus().then((s) => {
+      if (s.started_epoch_ms !== null) meetingId.current = s.started_epoch_ms;
+    });
+    commands.getMeetingSettings().then((s) => {
+      setLanguage(s.language);
+      setMode(s.post_process_mode);
+      setPromptId(s.post_process_prompt_id);
+    });
+    commands.meetingPostProcessOptions().then(setOptions);
     commands.meetingTurns().then(setTurns);
     const unlisten = [
       listen<MeetingStatus>("meeting:status", (e) => {
         setStatus(e.payload);
+        if (e.payload.started_epoch_ms !== null)
+          meetingId.current = e.payload.started_epoch_ms;
         if (e.payload.phase === "starting") {
+          meetingId.current = null;
           setTurns([]);
           setOutput(null);
           setError(null);
+          setCleanup(null);
         }
+      }),
+      listen<TurnCleaned>("meeting:turn_cleaned", (e) => {
+        const { meeting, id, text } = e.payload;
+        if (meeting !== meetingId.current) return;
+        setTurns((ts) =>
+          ts.map((t) => (t.id === id ? { ...t, cleaned: text } : t)),
+        );
+      }),
+      listen<PostProcessProgress>("meeting:post_process", (e) => {
+        if (e.payload.meeting !== meetingId.current) return;
+        setCleanup(e.payload);
+        if (e.payload.renamed) setOutput(e.payload.renamed);
+        if (e.payload.error) setError(e.payload.error);
       }),
       listen<TurnDto>("meeting:turn_appended", (e) =>
         setTurns((ts) => upsert(ts, e.payload)),
@@ -223,15 +284,47 @@ const MeetingWindow: React.FC = () => {
     [language],
   );
 
+  // Saves the choice; turning it on needs the experimental post-processing feature, which may
+  // have been switched on or off in the main window since this one opened.
+  const changePostProcess = useCallback(
+    async (nextMode: PostProcessMode, nextPrompt: string | null) => {
+      const latest = await commands.meetingPostProcessOptions();
+      setOptions(latest);
+      if (nextMode !== "off" && !latest.enabled) {
+        setShowEnableHelp(true);
+        return;
+      }
+      setShowEnableHelp(false);
+      const r = await commands.meetingSetPostProcess(nextMode, nextPrompt);
+      if (r.status === "error") {
+        setError(r.error);
+        return;
+      }
+      setMode(r.data.post_process_mode);
+      setPromptId(r.data.post_process_prompt_id);
+    },
+    [],
+  );
+
   const copyTranscript = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(transcriptText(turns));
+      await navigator.clipboard.writeText(transcriptText(turns, showOriginal));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch (e) {
       setError(String(e));
     }
-  }, [turns]);
+  }, [turns, showOriginal]);
+
+  const hasCleaned = useMemo(
+    () => turns.some((turn) => turn.cleaned !== null),
+    [turns],
+  );
+  const prompts = options?.prompts ?? [];
+  const selectedPrompt =
+    prompts.find((p) => p.id === promptId)?.id ??
+    prompts.find((p) => p.id === options?.default_prompt_id)?.id ??
+    null;
 
   const running = status.phase === "running";
   const busy = status.phase === "starting" || status.phase === "stopping";
@@ -305,6 +398,63 @@ const MeetingWindow: React.FC = () => {
       </header>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
+        <span
+          className="text-xs uppercase tracking-wide text-ink-3"
+          title={t("meeting.postProcess.hint")}
+        >
+          {t("meeting.postProcess.label")}
+        </span>
+        <Dropdown
+          selectedValue={mode}
+          options={POST_PROCESS_MODES.map((value) => ({
+            value,
+            label: t(`meeting.postProcess.mode.${value}`),
+          }))}
+          onSelect={(value) =>
+            changePostProcess(value as PostProcessMode, promptId)
+          }
+        />
+        <Dropdown
+          selectedValue={selectedPrompt}
+          options={prompts.map((p) => ({ value: p.id, label: p.name }))}
+          placeholder={t("meeting.postProcess.noPrompts")}
+          disabled={prompts.length === 0}
+          onOpen={() => commands.meetingPostProcessOptions().then(setOptions)}
+          onSelect={(value) => changePostProcess(mode, value)}
+        />
+        {hasCleaned && (
+          <label className="ml-auto flex items-center gap-1.5 text-sm text-ink-2">
+            <input
+              type="checkbox"
+              checked={showOriginal}
+              onChange={(e) => setShowOriginal(e.target.checked)}
+            />
+            {t("meeting.postProcess.showOriginal")}
+          </label>
+        )}
+      </div>
+
+      {showEnableHelp && (
+        <div className="mx-4 mt-3 flex items-start gap-3 rounded-lg border border-line bg-warning-wash px-3 py-2 text-sm">
+          <div className="flex-1">
+            <div className="font-medium">
+              {t("meeting.postProcess.disabledTitle")}
+            </div>
+            <div className="text-ink-2">
+              {t("meeting.postProcess.disabledHelp")}
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowEnableHelp(false)}
+          >
+            {t("meeting.dismiss")}
+          </Button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
         <span className="text-xs uppercase tracking-wide text-ink-3">
           {t("meeting.speakers")}
         </span>
@@ -362,7 +512,7 @@ const MeetingWindow: React.FC = () => {
                 {hms(turn.start_ms)}
               </span>
             </div>
-            <p className="leading-relaxed">{turn.text}</p>
+            <p className="leading-relaxed">{shownText(turn, showOriginal)}</p>
           </div>
         ))}
       </div>
@@ -391,6 +541,29 @@ const MeetingWindow: React.FC = () => {
               size="sm"
               variant="ghost"
               onClick={() => commands.meetingRevealOutput(output.markdown_path)}
+            >
+              {t("meeting.reveal")}
+            </Button>
+          </span>
+        )}
+        {cleanup && !cleanup.finished && (
+          <span>
+            {t("meeting.postProcess.progress", {
+              done: cleanup.done,
+              total: cleanup.total,
+            })}
+          </span>
+        )}
+        {cleanup?.path && (
+          <span className="flex items-center gap-2">
+            {t("meeting.postProcess.savedTo")}:{" "}
+            <span className="font-mono text-ink-2">
+              {cleanup.path.split(/[\\/]/).pop()}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => commands.meetingRevealOutput(cleanup.path)}
             >
               {t("meeting.reveal")}
             </Button>

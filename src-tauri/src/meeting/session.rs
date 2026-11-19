@@ -7,6 +7,7 @@
 //! Known gap: frames dropped by a capture-ring overrun are not visible per chunk, so such a gap
 //! shifts everything after it (both workers equally); it is logged at stop.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
@@ -26,7 +27,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use transcribe_cpp::Transcript;
 
-use super::settings::MeetingSettings;
+use super::postprocess::{self, Finish};
+use super::settings::{MeetingSettings, PostProcessMode};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::transcription::TranscriptionManager;
@@ -59,6 +61,11 @@ pub struct Shared {
     pub stats: Stats,
     /// Every utterance's speech-end → text delay, for the end-of-meeting summary.
     asr_delays_ms: Vec<u32>,
+    /// Changeable mid-meeting; read by the post-processing worker.
+    pub post_process_mode: PostProcessMode,
+    pub post_process_prompt_id: Option<String>,
+    /// LLM-cleaned text of locked turns, by turn id.
+    pub cleaned: HashMap<u32, String>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, specta::Type)]
@@ -78,6 +85,8 @@ pub struct Session {
     settings: MeetingSettings,
     /// Set when audio comes from `MEETSCRIBE_SIMULATE_WAV` instead of the microphone.
     simulation: Option<(Arc<AtomicBool>, JoinHandle<()>)>,
+    /// Hands the finished meeting to the post-processing worker.
+    post_process: mpsc::Sender<Finish>,
 }
 
 /// What a finished meeting wrote.
@@ -102,11 +111,11 @@ fn emit_turn_events(app: &AppHandle, shared: &mut Shared, events: Vec<TurnEvent>
         let (name, payload) = match ev {
             TurnEvent::Appended { turn } => (
                 "meeting:turn_appended",
-                super::TurnDto::from_turn(&turn, &shared.speakers),
+                super::TurnDto::from_turn(&turn, shared),
             ),
             TurnEvent::Updated { turn } => (
                 "meeting:turn_updated",
-                super::TurnDto::from_turn(&turn, &shared.speakers),
+                super::TurnDto::from_turn(&turn, shared),
             ),
             TurnEvent::Removed { id } => {
                 let _ = app.emit("meeting:turn_removed", id);
@@ -174,6 +183,9 @@ impl Session {
             hint_support,
             stats: Stats::default(),
             asr_delays_ms: Vec::new(),
+            post_process_mode: settings.post_process_mode,
+            post_process_prompt_id: settings.post_process_prompt_id.clone(),
+            cleaned: HashMap::new(),
         }));
 
         let (diar_tx, diar_rx) = mpsc::channel::<Frame>();
@@ -227,11 +239,13 @@ impl Session {
             }
         };
 
+        let post_process = postprocess::spawn(app, Arc::clone(&shared))?;
         {
             let s = shared.lock().unwrap();
             emit_status(app, &s);
         }
         Ok(Self {
+            post_process,
             shared,
             asr: Some(asr),
             diar: Some(diar),
@@ -281,8 +295,15 @@ impl Session {
             pct(0.95),
             shared.stats.max_asr_delay_ms,
         );
-        let output = write_outputs(app, &self.settings, &shared);
-        add_to_history(app, &shared, &output);
+        let info = meeting_info(&shared);
+        let output = write_outputs(app, &self.settings, &shared, &info);
+        let history_id = add_to_history(app, &shared, &output);
+        // the worker takes it from here; it is gone only if it panicked
+        let _ = self.post_process.send(Finish {
+            info,
+            output: output.clone(),
+            history_id,
+        });
         output
     }
 }
@@ -337,31 +358,39 @@ fn simulate_from_file(
     Ok((stop, handle))
 }
 
-fn write_outputs(app: &AppHandle, settings: &MeetingSettings, shared: &Shared) -> MeetingOutput {
-    let mut out = MeetingOutput::default();
-    let dir = settings.resolved_output_dir(app);
-    let stem = export::file_stem(&shared.started_local);
-    let info = MeetingInfo {
+fn meeting_info(shared: &Shared) -> MeetingInfo {
+    MeetingInfo {
         started_local: shared.started_local.clone(),
         duration_ms: shared.audio_ms,
         asr_model: shared.asr_model.clone(),
         diarizer_model: shared.diarizer.clone(),
         dropped_audio_ms: 0,
-    };
+    }
+}
+
+fn write_outputs(
+    app: &AppHandle,
+    settings: &MeetingSettings,
+    shared: &Shared,
+    info: &MeetingInfo,
+) -> MeetingOutput {
+    let mut out = MeetingOutput::default();
+    let dir = settings.resolved_output_dir(app);
+    let stem = export::file_stem(&shared.started_local);
     let result = (|| -> Result<()> {
         std::fs::create_dir_all(&dir)
             .with_context(|| format!("cannot create {}", dir.display()))?;
         let md_path = unique_path(dir.join(format!("{stem}.md")));
         std::fs::write(
             &md_path,
-            export::to_markdown(&info, shared.turns.turns(), &shared.speakers),
+            export::to_markdown(info, shared.turns.turns(), &shared.speakers),
         )?;
         out.markdown_path = Some(md_path.to_string_lossy().into_owned());
         if settings.write_json {
             let json_path = md_path.with_extension("json");
             std::fs::write(
                 &json_path,
-                export::to_json(&info, shared.turns.turns(), &shared.speakers)?,
+                export::to_json(info, shared.turns.turns(), &shared.speakers)?,
             )?;
             out.json_path = Some(json_path.to_string_lossy().into_owned());
         }
@@ -380,28 +409,29 @@ fn write_outputs(app: &AppHandle, settings: &MeetingSettings, shared: &Shared) -
     out
 }
 
-/// Lists the saved meeting in History. A meeting in which nothing was said isn't worth a row.
-fn add_to_history(app: &AppHandle, shared: &Shared, output: &MeetingOutput) {
-    let Some(transcript_path) = &output.markdown_path else {
-        return;
-    };
+/// Lists the saved meeting in History and returns the entry's id. A meeting in which nothing was
+/// said isn't worth a row.
+fn add_to_history(app: &AppHandle, shared: &Shared, output: &MeetingOutput) -> Option<i64> {
+    let transcript_path = output.markdown_path.as_ref()?;
     let transcript = export::transcript_text(shared.turns.turns(), &shared.speakers);
     let transcript = transcript.trim_end();
     if transcript.is_empty() {
-        return;
+        return None;
     }
-    if let Err(e) = app.state::<Arc<HistoryManager>>().save_meeting_entry(
-        (shared.started_epoch_ms / 1000) as i64,
-        transcript.to_string(),
-        Path::new(transcript_path),
-        output.audio_path.as_deref().map(Path::new),
-    ) {
-        log::error!("Failed to add the meeting to history: {e:#}");
-    }
+    app.state::<Arc<HistoryManager>>()
+        .save_meeting_entry(
+            (shared.started_epoch_ms / 1000) as i64,
+            transcript.to_string(),
+            Path::new(transcript_path),
+            output.audio_path.as_deref().map(Path::new),
+        )
+        .inspect_err(|e| log::error!("Failed to add the meeting to history: {e:#}"))
+        .ok()
+        .map(|entry| entry.id)
 }
 
 /// `path`, or `path` with ` (2)`, ` (3)`… if it exists (two meetings started in one minute).
-fn unique_path(path: PathBuf) -> PathBuf {
+pub(super) fn unique_path(path: PathBuf) -> PathBuf {
     if !path.exists() {
         return path;
     }

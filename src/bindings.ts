@@ -1036,6 +1036,21 @@ async meetingRevealOutput(path: string | null) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async meetingPostProcessOptions() : Promise<PostProcessOptions> {
+    return await TAURI_INVOKE("meeting_post_process_options");
+},
+/**
+ * Sets when and with which prompt meetings are post-processed; saved for next time and applied
+ * to a running meeting at once.
+ */
+async meetingSetPostProcess(mode: PostProcessMode, promptId: string | null) : Promise<Result<MeetingSettings, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("meeting_set_post_process", { mode, promptId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getMeetingSettings() : Promise<MeetingSettings> {
     return await TAURI_INVOKE("get_meeting_settings");
 },
@@ -1260,7 +1275,11 @@ asr_model: string | null; write_json: boolean; diarizer_backend: DiarizerBackend
 /**
  * Spoken-language hint for meeting transcription: "auto" or an ISO 639-1 code.
  */
-language: string }
+language: string; post_process_mode: PostProcessMode; 
+/**
+ * Post-processing prompt for meetings; `None` = the prompt selected for dictation.
+ */
+post_process_prompt_id: string | null }
 export type MeetingStatus = { phase: MeetingPhase; started_epoch_ms: number | null; audio_ms: number; speakers: SpeakerDto[]; asr_model: string | null; diarizer: string | null; diarizer_latency_ms: number; stats: Stats | null; 
 /**
  * The chosen language has no effect with the meeting's ASR model.
@@ -1301,6 +1320,7 @@ export type OverlayPosition = "top" | "bottom"
  * streaming mode (that is driven purely by model capability).
  */
 export type OverlayStyle = "none" | "minimal" | "live"
+export type PromptOption = { id: string; name: string }
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
@@ -1317,6 +1337,30 @@ export type PostProcessApiFormat =
  * Anthropic Messages (`/messages`)
  */
 "anthropic"
+/**
+ * When a meeting's transcript is cleaned up by the post-processing LLM.
+ */
+export type PostProcessMode = "off" | 
+/**
+ * Once, after the meeting is stopped.
+ */
+"at_end" | 
+/**
+ * At an interval while the meeting runs, then the rest when it stops.
+ */
+"continuous"
+/**
+ * What the meeting window needs to offer post-processing.
+ */
+export type PostProcessOptions = { 
+/**
+ * The experimental post-processing feature is turned on.
+ */
+enabled: boolean; prompts: PromptOption[]; 
+/**
+ * The prompt selected for dictation, used when the meeting has none of its own.
+ */
+default_prompt_id: string | null }
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
 /**
  * Recording phase events for windows that follow along (onboarding's Try it).
@@ -1490,7 +1534,11 @@ export type TranscriptionOutcome =
 /**
  * A turn as the meeting window renders it.
  */
-export type TurnDto = { id: number; speaker: number | null; label: string; start_ms: number; end_ms: number; text: string; locked: boolean }
+export type TurnDto = { id: number; speaker: number | null; label: string; start_ms: number; end_ms: number; text: string; locked: boolean; 
+/**
+ * The text as cleaned up by post-processing, once there is one.
+ */
+cleaned: string | null }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }

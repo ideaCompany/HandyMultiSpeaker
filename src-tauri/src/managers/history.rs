@@ -432,6 +432,41 @@ impl HistoryManager {
         Ok(entry)
     }
 
+    /// Points a meeting's entry at its transcript and audio after they were renamed.
+    pub fn update_meeting_files(
+        &self,
+        id: i64,
+        transcript_path: &Path,
+        audio_path: Option<&Path>,
+    ) -> Result<()> {
+        let conn = self.get_connection()?;
+        conn.execute(
+            "UPDATE transcription_history
+             SET source_name = ?1, meeting_path = ?2, file_name = ?3
+             WHERE id = ?4",
+            params![
+                transcript_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned()),
+                transcript_path.to_string_lossy(),
+                audio_path
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                id
+            ],
+        )?;
+        let entry = conn.query_row(
+            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, post_process_requested, source_name, meeting_path
+             FROM transcription_history WHERE id = ?1",
+            params![id],
+            Self::map_history_entry,
+        )?;
+        if let Err(e) = (HistoryUpdatePayload::Updated { entry }).emit(&self.app_handle) {
+            error!("Failed to emit history-updated event: {}", e);
+        }
+        Ok(())
+    }
+
     pub fn cleanup_old_entries(&self) -> Result<()> {
         let retention_period = crate::settings::get_recording_retention_period(&self.app_handle);
 

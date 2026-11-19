@@ -1,5 +1,8 @@
 // meetscribe: plain "MeetScribe" wordmark (replaces Handy's hand-lettered logo).
 // Keeps the old 930×328 box so existing width/height props lay out the same.
+// The word is laid out from the left at a size that fits the box at its natural width: WebKit
+// gets both `textLength` and `textAnchor="middle"` wrong on a text made of several tspans,
+// which pushed the last letter out of the box.
 const WORD_1 = "Meet";
 const WORD_2 = "Scribe";
 
@@ -24,13 +27,10 @@ const HandyTextLogo = ({
       aria-label="MeetScribe"
     >
       <text
-        x="465"
-        y="222"
-        textAnchor="middle"
-        textLength="840"
-        lengthAdjust="spacingAndGlyphs"
+        x="58"
+        y="208"
         fontFamily="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif"
-        fontSize="190"
+        fontSize="125"
         fontWeight="700"
       >
         {/* The brand name is not translated. */}
