@@ -1,22 +1,32 @@
 # MeetScribe – OpenAI engine (2026-11-17)
 
 An optional cloud route for machines without a fast GPU (first target: an i7-8550U laptop with
-Intel UHD 620, Linux). Off by default. It is a **model choice**: pick "OpenAI gpt-transcribe" in
-the model picker (footer) or on the Models page, and dictation goes to OpenAI. Meetings follow the
-dictation model ("Same as dictation") unless **Meetings → ASR model** picks one explicitly
-(including "OpenAI"). Meeting-only OpenAI options (final speaker pass, notes, spoken languages)
-are under **Settings → Meetings → OpenAI**. With OpenAI selected, audio is sent to OpenAI.
+Intel UHD 620, Linux). **OpenAI is a model in the ordinary model list** (id `openai`, source
+`Cloud`): nothing to download, nothing loaded into memory, never auto-selected. Pick it in the
+footer model picker, the tray or on the Models page and dictation (and History/file
+transcriptions) go to OpenAI. Meetings follow the dictation model ("Same as dictation") unless
+**Meetings → Meeting transcription model** picks one explicitly — OpenAI is in that list too.
+Audio only leaves the machine while OpenAI is the model in use.
+
+Settings (stored in `openai_settings.json`; the first version kept them under the `openai` key of
+`meeting_settings.json` with a `dictation` flag, migrated once at startup into the model
+selection):
+
+- **Models page**, shown while OpenAI is the model in use: API key status, transcription model,
+  spoken languages.
+- **Meetings page**, shown while meetings run on OpenAI: final speaker pass, AI notes, notes model
+  (plus the model settings when dictation uses a local model).
 
 ## What runs where
 
-| Step                         | Model / API                                        | When                         |
-| ---------------------------- | -------------------------------------------------- | ---------------------------- |
-| Utterance segmentation (VAD) | local Silero, unchanged                            | live                         |
-| Text                         | `gpt-transcribe` (`languages[]`, `keywords[]`)     | live, per utterance          |
-| Live speakers                | `gpt-4o-transcribe-diarize` + ≤ 4 enrolled voices  | live, per utterance          |
-| Final speakers               | `gpt-4o-transcribe-diarize` on the whole recording | after Stop (10 min chunks)   |
-| Notes                        | Responses API, `gpt-5.5`                           | after Stop → `…_notes.md`    |
-| Dictation                    | `gpt-transcribe`                                   | on release of the shortcut   |
+| Step                         | Model / API                                        | When                       |
+| ---------------------------- | -------------------------------------------------- | -------------------------- |
+| Utterance segmentation (VAD) | local Silero, unchanged                            | live                       |
+| Text                         | `gpt-transcribe` (`languages[]`, `keywords[]`)     | live, per utterance        |
+| Live speakers                | `gpt-4o-transcribe-diarize` + ≤ 4 enrolled voices  | live, per utterance        |
+| Final speakers               | `gpt-4o-transcribe-diarize` on the whole recording | after Stop (10 min chunks) |
+| Notes                        | Responses API, `gpt-5.5`                           | after Stop → `…_notes.md`  |
+| Dictation                    | `gpt-transcribe`                                   | on release of the shortcut |
 
 Code: `src-tauri/src/openai/` (client, settings, speaker tracker, notes),
 `src-tauri/src/meeting/cloud.rs` (live pipeline), `src-tauri/src/meeting/refine.rs` (final pass).
@@ -38,12 +48,12 @@ api-key` on Linux; keychain item `openai`/`api-key` on macOS), then the Post Pro
 Simulated 83 s, 3-speaker NL/EN meeting (TTS voices onyx/nova/fable), real-time through the app
 (`MEETSCRIBE_SIMULATE_WAV`):
 
-| Metric                        | Result                                    |
-| ----------------------------- | ----------------------------------------- |
-| Speech end → text on screen   | median 1.0 s, p95 1.3 s                   |
-| Live speaker labels           | 3 voices enrolled; one merge before fixes |
-| Final pass                    | 40 s, 10/10 turns on the right speaker    |
-| Notes (`gpt-5.5`)             | 9 s, Dutch, correct decisions and owners  |
+| Metric                      | Result                                    |
+| --------------------------- | ----------------------------------------- |
+| Speech end → text on screen | median 1.0 s, p95 1.3 s                   |
+| Live speaker labels         | 3 voices enrolled; one merge before fixes |
+| Final pass                  | 40 s, 10/10 turns on the right speaker    |
+| Notes (`gpt-5.5`)           | 9 s, Dutch, correct decisions and owners  |
 
 Cost (Nov 2026 list prices): text $0.0045/min + diarization $0.006/min live + $0.006/min final,
 ≈ $1/hour of meeting plus a few cents for notes.

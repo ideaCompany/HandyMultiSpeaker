@@ -13,7 +13,6 @@ import ModelDropdown from "./ModelDropdown";
 import DownloadProgressDisplay from "./DownloadProgressDisplay";
 
 import { ModelStateEvent } from "@/lib/types/events";
-import { useOpenAiStore } from "../../stores/openaiStore";
 
 type ModelStatus =
   | "ready"
@@ -38,14 +37,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
     selectModel,
   } = useModelStore();
   const modelsLocked = useModelsLocked();
-  // meetscribe: OpenAI as a dictation "model"
-  const openai = useOpenAiStore((s) => s.settings);
-  const loadOpenAi = useOpenAiStore((s) => s.load);
-  const updateOpenAi = useOpenAiStore((s) => s.update);
-  useEffect(() => {
-    loadOpenAi();
-  }, [loadOpenAi]);
-  const openaiActive = openai?.dictation ?? false;
 
   const [modelStatus, setModelStatus] = useState<ModelStatus>("unloaded");
   const [modelError, setModelError] = useState<string | null>(null);
@@ -165,15 +156,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
     }
   };
 
-  const handleOpenAiSelect = async () => {
-    setShowModelDropdown(false);
-    await updateOpenAi({ dictation: true });
-  };
-
   const getModelDisplayText = (): string => {
-    if (openaiActive && openai) {
-      return t("modelSelector.openai.name", { model: openai.transcribe_model });
-    }
     const verifyingKeys = Object.keys(verifyingModels);
     if (verifyingKeys.length > 0) {
       if (verifyingKeys.length === 1) {
@@ -234,7 +217,6 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
 
   // Derive display status from model status + store state
   const getDisplayStatus = (): ModelStatus => {
-    if (openaiActive) return "ready";
     if (Object.keys(verifyingModels).length > 0) return "verifying";
     if (Object.keys(downloadProgress).length > 0) return "downloading";
     return modelStatus;
@@ -256,18 +238,9 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ onError }) => {
         {showModelDropdown && (
           <ModelDropdown
             models={models}
-            currentModelId={openaiActive ? "" : displayModelId}
+            currentModelId={displayModelId}
             locked={modelsLocked}
             onModelSelect={handleModelSelect}
-            openai={
-              openai
-                ? {
-                    model: openai.transcribe_model,
-                    active: openaiActive,
-                    onSelect: handleOpenAiSelect,
-                  }
-                : undefined
-            }
           />
         )}
       </div>

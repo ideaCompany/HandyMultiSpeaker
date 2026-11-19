@@ -433,6 +433,7 @@ fn rename_outputs(output: &MeetingOutput, title: &str) -> Option<MeetingOutput> 
     Some(MeetingOutput {
         json_path: follow(&output.json_path, "json"),
         audio_path: follow(&output.audio_path, "wav"),
+        vtt_path: follow(&output.vtt_path, "vtt"),
         // meetscribe: the OpenAI notes keep their `<transcript>_notes.md` name
         notes_path: follow_to(
             &output.notes_path,
@@ -543,6 +544,8 @@ mod tests {
         for name in [
             "2026-11-09_1602_meeting (2).md",
             "2026-11-09_1602_meeting (2).json",
+            "2026-11-09_1602_meeting (2).vtt",
+            "2026-11-09_1602_meeting (2)_notes.md",
         ] {
             std::fs::write(dir.join(name), "x").unwrap();
         }
@@ -551,6 +554,8 @@ mod tests {
                 markdown_path: Some(file("2026-11-09_1602_meeting (2).md")),
                 json_path: Some(file("2026-11-09_1602_meeting (2).json")),
                 audio_path: None,
+                notes_path: Some(file("2026-11-09_1602_meeting (2)_notes.md")),
+                vtt_path: Some(file("2026-11-09_1602_meeting (2).vtt")),
                 error: None,
             },
             "Budget-2027",
@@ -565,6 +570,16 @@ mod tests {
             Some(file("2026-11-09_1602_Budget-2027.json"))
         );
         assert!(dir.join("2026-11-09_1602_Budget-2027.json").is_file());
+        // meetscribe: the live transcript and the notes follow the transcript
+        assert_eq!(
+            renamed.vtt_path,
+            Some(file("2026-11-09_1602_Budget-2027.vtt"))
+        );
+        assert_eq!(
+            renamed.notes_path,
+            Some(file("2026-11-09_1602_Budget-2027_notes.md"))
+        );
+        assert!(dir.join("2026-11-09_1602_Budget-2027_notes.md").is_file());
         assert!(!dir.join("2026-11-09_1602_meeting (2).md").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }

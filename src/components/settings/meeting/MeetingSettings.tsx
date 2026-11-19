@@ -8,6 +8,10 @@ import {
   type ModelInfo,
 } from "@/bindings";
 import { useOpenAiStore } from "@/stores/openaiStore";
+import { useModelStore } from "@/stores/modelStore";
+import { MeetingButton } from "../../meeting/MeetingButton";
+import { AiInstructions } from "./AiInstructions";
+import { OpenAiSettings, withCurrent } from "../models/OpenAiSettings";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { SettingContainer } from "../../ui/SettingContainer";
 import { Dropdown } from "../../ui/Dropdown";
@@ -18,87 +22,33 @@ import { ShortcutInput } from "../ShortcutInput";
 
 const LATENCIES: LatencyProfile[] = ["ultra_low", "very_low", "low", "high"];
 const BACKENDS: DiarizerBackend[] = ["auto", "native", "python_sidecar"];
-const TRANSCRIBE_MODELS = ["gpt-transcribe", "gpt-4o-transcribe"];
 const NOTES_MODELS = ["gpt-5.5", "gpt-5.4-mini"];
 
-/** Dropdown options, keeping a custom value already stored in the settings. */
-const withCurrent = (values: string[], current: string) =>
-  (values.includes(current) ? values : [current, ...values]).map((v) => ({
-    value: v,
-    label: v,
-  }));
-
-/** meetscribe: OpenAI engine (cloud transcription, speakers and meeting notes). */
-const OpenAiGroup: React.FC<{ cloud: boolean }> = ({ cloud }) => {
+/** meetscribe: what OpenAI adds to a meeting (speaker pass, notes). */
+const OpenAiMeetingGroup: React.FC = () => {
   const { t } = useTranslation();
   const oa = useOpenAiStore((s) => s.settings);
-  const key = useOpenAiStore((s) => s.key);
   const load = useOpenAiStore((s) => s.load);
   const update = useOpenAiStore((s) => s.update);
-  const [languages, setLanguages] = useState("");
 
   useEffect(() => {
     load();
   }, [load]);
-  useEffect(() => {
-    if (oa) setLanguages(oa.languages.join(", "));
-  }, [oa]);
 
   if (!oa) return null;
 
   return (
-    <SettingsGroup title={t("settings.meeting.openai.title")}>
-      <SettingContainer
-        title={t("settings.meeting.openai.key.label")}
-        description={
-          key?.found
-            ? t("settings.meeting.openai.key.found", { source: key.source })
-            : t("settings.meeting.openai.key.missing")
-        }
-        grouped={true}
-      >
-        <span className={key?.found ? "text-green-600" : "text-red-600"}>
-          {key?.found ? "✓" : "✗"}
-        </span>
-      </SettingContainer>
+    <SettingsGroup
+      title={t("settings.meeting.openai.title")}
+      description={t("settings.meeting.openai.description")}
+    >
       <ToggleSwitch
         checked={oa.final_pass}
         onChange={(v) => update({ final_pass: v })}
         label={t("settings.meeting.openai.finalPass.label")}
         description={t("settings.meeting.openai.finalPass.description")}
         grouped={true}
-        disabled={!cloud}
       />
-      <SettingContainer
-        title={t("settings.meeting.openai.languages.label")}
-        description={t("settings.meeting.openai.languages.description")}
-        grouped={true}
-      >
-        <input
-          value={languages}
-          onChange={(e) => setLanguages(e.target.value)}
-          onBlur={() =>
-            update({
-              languages: languages
-                .split(/[\s,]+/)
-                .map((l) => l.trim())
-                .filter(Boolean),
-            })
-          }
-          className="w-32 rounded-md border border-line bg-background px-2 py-1 text-sm"
-        />
-      </SettingContainer>
-      <SettingContainer
-        title={t("settings.meeting.openai.transcribeModel.label")}
-        description={t("settings.meeting.openai.transcribeModel.description")}
-        grouped={true}
-      >
-        <Dropdown
-          selectedValue={oa.transcribe_model}
-          options={withCurrent(TRANSCRIBE_MODELS, oa.transcribe_model)}
-          onSelect={(v) => update({ transcribe_model: v })}
-        />
-      </SettingContainer>
       <ToggleSwitch
         checked={oa.notes}
         onChange={(v) => update({ notes: v })}
@@ -127,7 +77,7 @@ export const MeetingSettings: React.FC = () => {
   const [settings, setSettings] = useState<MeetingSettingsT | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [outputDir, setOutputDir] = useState("");
-  const openai = useOpenAiStore((s) => s.settings);
+  const dictationModel = useModelStore((s) => s.currentModel);
 
   useEffect(() => {
     commands.getMeetingSettings().then((s) => {
@@ -153,30 +103,30 @@ export const MeetingSettings: React.FC = () => {
 
   if (!settings) return null;
 
-  // meetscribe: meetings run on OpenAI when it is picked here, or when they follow the
+  // meetscribe: meetings run on OpenAI when it is the meeting model, or when they follow the
   // dictation model and that is OpenAI
-  const cloudMeetings =
-    settings.asr_model === "openai" ||
-    (!settings.asr_model && (openai?.dictation ?? false));
+  const cloudMeetings = (settings.asr_model ?? dictationModel) === "openai";
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
-      <OpenAiGroup cloud={cloudMeetings} />
-      <SettingsGroup title={t("settings.meeting.title")}>
-        <ShortcutInput shortcutId="toggle_meeting" grouped={true} />
-        <SettingContainer
-          title={t("settings.meeting.open.label")}
-          description={t("settings.meeting.open.description")}
-          grouped={true}
-        >
+      <div className="flex items-center justify-between gap-4 rounded-lg border border-line px-4 py-4">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold">{t("meeting.title")}</h2>
+          <p className="text-sm text-ink-3">{t("meeting.startHint")}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           <Button
-            size="sm"
+            size="md"
             variant="secondary"
             onClick={() => commands.meetingOpenWindow()}
           >
-            {t("settings.meeting.open.button")}
+            {t("meeting.openWindow")}
           </Button>
-        </SettingContainer>
+          <MeetingButton size="md" />
+        </div>
+      </div>
+      <SettingsGroup title={t("settings.meeting.title")}>
+        <ShortcutInput shortcutId="toggle_meeting" grouped={true} />
         <Slider
           value={settings.max_speakers}
           min={1}
@@ -213,12 +163,6 @@ export const MeetingSettings: React.FC = () => {
             selectedValue={settings.asr_model ?? ""}
             options={[
               { value: "", label: t("settings.meeting.asrModel.same") },
-              {
-                value: "openai",
-                label: t("modelSelector.openai.name", {
-                  model: openai?.transcribe_model ?? "gpt-transcribe",
-                }),
-              },
               ...models.map((m) => ({ value: m.id, label: m.name })),
             ]}
             onSelect={(v) => update({ asr_model: v || null })}
@@ -243,6 +187,13 @@ export const MeetingSettings: React.FC = () => {
           </SettingContainer>
         )}
       </SettingsGroup>
+      {cloudMeetings && (
+        <>
+          <OpenAiMeetingGroup />
+          {/* The model's own settings, when the Models page doesn't show them */}
+          {dictationModel !== "openai" && <OpenAiSettings />}
+        </>
+      )}
       <SettingsGroup title={t("meeting.savedTo")}>
         <SettingContainer
           title={t("settings.meeting.outputDir.label")}
@@ -282,6 +233,7 @@ export const MeetingSettings: React.FC = () => {
           grouped={true}
         />
       </SettingsGroup>
+      <AiInstructions outputDir={settings.output_dir} />
     </div>
   );
 };

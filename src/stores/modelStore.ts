@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { useOpenAiStore } from "./openaiStore";
 import { subscribeWithSelector } from "zustand/middleware";
 import { produce } from "immer";
 import { listen } from "@tauri-apps/api/event";
@@ -139,11 +138,6 @@ export const useModelStore = create<ModelsStore>()(
         const result = await commands.setActiveModel(modelId);
         if (result.status === "ok") {
           set({ currentModel: modelId });
-          // meetscribe: choosing a local model takes dictation off OpenAI
-          const openai = useOpenAiStore.getState();
-          if (openai.settings?.dictation) {
-            await openai.update({ dictation: false });
-          }
           return true;
         } else {
           set({ error: `Failed to switch to model: ${result.error}` });

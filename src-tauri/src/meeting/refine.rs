@@ -105,7 +105,7 @@ pub fn map_to_live(spans: &[Span], live: &[AttributedWord]) -> BTreeMap<u8, u8> 
         }
     }
     let mut pairs: Vec<((u8, u8), u64)> = overlap.into_iter().collect();
-    pairs.sort_by(|a, b| b.1.cmp(&a.1));
+    pairs.sort_by_key(|a| std::cmp::Reverse(a.1));
     let mut map = BTreeMap::new();
     let mut used = std::collections::BTreeSet::new();
     for ((new, l), _) in pairs {

@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { OpenAiModelCard } from "./OpenAiModelCard";
 import { useTranslation } from "react-i18next";
 import { RefreshCw } from "lucide-react";
 import { Tooltip } from "@/components/ui/Tooltip";
@@ -14,6 +13,7 @@ import RetiredModelsNotice from "./RetiredModelsNotice";
 import { ModelRow } from "./ModelRow";
 import { Legend } from "./Legend";
 import { useModelEntries } from "./modelEntries";
+import { OpenAiSettings } from "./OpenAiSettings";
 
 /** Past this many models on disk, the rest fold under "Show N more". */
 const YOURS_LIMIT = 5;
@@ -54,6 +54,8 @@ export const ModelsSettings: React.FC<ModelsSettingsProps> = ({
   const { facts, lists } = useModelEntries();
   const { filters, setFilters, searching, matches } = useModelFilters();
   const [more, setMore] = useState(false);
+  // meetscribe: the OpenAI model's settings show while it is the model in use
+  const openaiInUse = useModelStore((s) => s.currentModel === "openai");
 
   if (loading) {
     return (
@@ -152,9 +154,11 @@ export const ModelsSettings: React.FC<ModelsSettingsProps> = ({
           </button>
         )}
       </div>
-      <div className="mx-[12px] mb-[16px] flex-none">
-        <OpenAiModelCard />
-      </div>
+      {openaiInUse && (
+        <div className="mx-[12px] mb-[16px] flex-none">
+          <OpenAiSettings />
+        </div>
+      )}
       <div className="mx-[12px] mb-[16px] flex-none empty:hidden">
         <RetiredModelsNotice />
       </div>

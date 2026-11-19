@@ -1,5 +1,5 @@
-// meetscribe: OpenAI engine settings, shared by the model picker, the Models page and the
-// Meetings settings so they stay in sync.
+// meetscribe: settings of the OpenAI model, shared by the Models page and the Meetings
+// settings so they stay in sync. Whether OpenAI is used is the ordinary model selection.
 import { create } from "zustand";
 import {
   commands,
@@ -35,7 +35,3 @@ export const useOpenAiStore = create<OpenAiStore>()((set, get) => ({
     return saved;
   },
 }));
-
-/** True when dictation goes to OpenAI instead of the local model. */
-export const useOpenAiDictation = () =>
-  useOpenAiStore((s) => s.settings?.dictation ?? false);

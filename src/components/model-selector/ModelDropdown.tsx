@@ -12,8 +12,6 @@ interface ModelDropdownProps {
   // A file is transcribing: show the models, but don't let them be picked.
   locked?: boolean;
   onModelSelect: (modelId: string) => void;
-  /** meetscribe: OpenAI cloud transcription as a pickable entry. */
-  openai?: { model: string; active: boolean; onSelect: () => void };
 }
 
 const ModelDropdown: React.FC<ModelDropdownProps> = ({
@@ -21,7 +19,6 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
   currentModelId,
   locked = false,
   onModelSelect,
-  openai,
 }) => {
   const { t } = useTranslation();
   const downloadedModels = models.filter((m) => m.is_downloaded);
@@ -36,44 +33,6 @@ const ModelDropdown: React.FC<ModelDropdownProps> = ({
       {locked && (
         <div className="px-3 pb-2 mb-1 text-xs text-ink-2 border-b border-line">
           {t("modelSelector.lockedWhileTranscribing")}
-        </div>
-      )}
-      {openai && (
-        <div
-          onClick={() => !locked && openai.onSelect()}
-          onKeyDown={(e) => {
-            if (!locked && (e.key === "Enter" || e.key === " ")) {
-              e.preventDefault();
-              openai.onSelect();
-            }
-          }}
-          tabIndex={locked ? -1 : 0}
-          role="button"
-          aria-disabled={locked}
-          className={`w-full px-3 py-2 text-start transition-colors focus:outline-none border-b border-line mb-1 ${
-            locked
-              ? "opacity-50 cursor-not-allowed"
-              : "hover:bg-wash cursor-pointer"
-          } ${openai.active ? "bg-logo-primary/10 text-logo-primary" : ""}`}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-text">
-                {t("modelSelector.openai.name", { model: openai.model })}
-                <span className="ms-1.5 text-[10px] font-medium text-ink-3 uppercase">
-                  {t("modelSelector.openai.cloud")}
-                </span>
-              </div>
-              <div className="text-xs text-ink-3 italic pe-4">
-                {t("modelSelector.openai.description")}
-              </div>
-            </div>
-            {openai.active && (
-              <div className="text-xs text-logo-primary">
-                {t("modelSelector.active")}
-              </div>
-            )}
-          </div>
         </div>
       )}
       {downloadedModels.length > 0 ? (

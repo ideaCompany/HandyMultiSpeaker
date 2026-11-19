@@ -7,6 +7,7 @@
 
 pub mod cloud;
 pub mod language;
+pub mod live;
 pub mod model;
 pub mod postprocess;
 pub mod refine;
@@ -315,6 +316,8 @@ fn saved_meeting_timestamp(file_name: &str) -> Option<i64> {
 
 /// Lists the meetings already in the output folder in History, the first time this version runs.
 pub fn import_saved_meetings_into_history(app: &AppHandle) {
+    // meetscribe: no meeting runs at startup, so a `current.vtt` is left over from a crash
+    live::remove_stale_current(&settings::load(app).resolved_output_dir(app));
     if !settings::claim_history_import(app) {
         return;
     }
@@ -442,8 +445,17 @@ pub fn meeting_rename_speaker(app: AppHandle, speaker: u8, name: String) -> Resu
         return Err("No meeting is running".into());
     };
     let mut s = session.shared.lock().unwrap();
+    let old_label = s.speakers.label(Some(speaker));
     s.speakers.rename(speaker, &name);
     let label = s.speakers.label(Some(speaker));
+    // meetscribe: earlier cues in the live transcript keep the old label; say so in the file
+    if label != old_label {
+        if let Some(live) = s.live.as_mut() {
+            live.note(&format!(
+                "{old_label} is now called {label}. This applies to earlier cues too."
+            ));
+        }
+    }
     let _ = app.emit(
         "meeting:speaker_renamed",
         SpeakerRenamed {
@@ -452,6 +464,18 @@ pub fn meeting_rename_speaker(app: AppHandle, speaker: u8, name: String) -> Resu
         },
     );
     Ok(label)
+}
+
+/// meetscribe: instructions (a SKILL.md) that let an AI read the meetings folder: the current
+/// meeting's live `.vtt` and the history. Shown in Settings → Meetings to copy into any LLM.
+const AI_INSTRUCTIONS: &str = include_str!("ai_instructions.md");
+
+/// The AI instructions with this machine's meetings folder filled in.
+#[tauri::command]
+#[specta::specta]
+pub fn meeting_ai_instructions(app: AppHandle) -> String {
+    let dir = settings::load(&app).resolved_output_dir(&app);
+    AI_INSTRUCTIONS.replace("{{DIR}}", &dir.to_string_lossy())
 }
 
 /// Sets the spoken-language hint; saved for next time and applied to a running meeting from its

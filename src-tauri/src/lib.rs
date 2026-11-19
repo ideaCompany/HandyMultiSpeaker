@@ -198,6 +198,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Initialize the managers. The audio recorder receives the streaming router
     // explicitly, so always-on microphone startup can wire live-preview frames
     // even before Tauri state is populated.
+    openai::settings::migrate_legacy(app_handle); // meetscribe
     let model_manager =
         Arc::new(ModelManager::new(app_handle).expect("Failed to initialize model manager"));
     let transcription_manager = Arc::new(
@@ -795,6 +796,7 @@ pub fn run(cli_args: CliArgs) {
             meeting::meeting_reveal_output,
             meeting::postprocess::meeting_post_process_options,
             meeting::postprocess::meeting_set_post_process,
+            meeting::meeting_ai_instructions,
             meeting::settings::get_meeting_settings,
             openai::settings::get_openai_settings,
             openai::settings::set_openai_settings,

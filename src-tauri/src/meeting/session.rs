@@ -68,6 +68,11 @@ pub struct Shared {
     pub cleaned: HashMap<u32, String>,
     /// meetscribe: utterance spans (ms), for cutting the recording at pauses (OpenAI final pass).
     pub utterance_spans: Vec<(u64, u64)>,
+    /// meetscribe: file name (no extension) all of this meeting's files use, reserved at start.
+    pub stem: String,
+    /// meetscribe: the live `.vtt` transcript; `None` once the meeting has ended (or when the
+    /// file could not be created).
+    pub live: Option<super::live::LiveVtt>,
 }
 
 /// meetscribe: what the OpenAI end-of-meeting speaker pass needs.
@@ -110,6 +115,8 @@ pub struct MeetingOutput {
     pub audio_path: Option<String>,
     /// AI meeting notes (OpenAI), when enabled.
     pub notes_path: Option<String>,
+    /// meetscribe: the WebVTT transcript (live during the meeting, final afterwards).
+    pub vtt_path: Option<String>,
     pub error: Option<String>,
 }
 
@@ -158,6 +165,16 @@ pub(crate) fn emit_turn_events(app: &AppHandle, shared: &mut Shared, events: Vec
             }
         };
         let _ = app.emit(name, payload);
+    }
+    // meetscribe: finished turns go to the live transcript file
+    let Shared {
+        live,
+        turns,
+        speakers,
+        ..
+    } = shared;
+    if let Some(live) = live.as_mut() {
+        live.sync(turns, speakers);
     }
 }
 
@@ -225,6 +242,21 @@ impl Session {
         log::info!("Meeting ASR model {asr_model}: language hint support {hint_support:?}");
 
         let started = chrono::Local::now();
+        // meetscribe: one file name for everything this meeting writes, reserved now so the live
+        // transcript and the final files match
+        let output_dir = settings.resolved_output_dir(app);
+        let started_label = started.format("%Y-%m-%d %H:%M").to_string();
+        let stem = reserve_stem(&output_dir, &export::file_stem(&started_label));
+        let live = match super::live::LiveVtt::create(&output_dir, &stem, &started_label) {
+            Ok(live) => {
+                log::info!("Live transcript: {}", live.path().display());
+                Some(live)
+            }
+            Err(e) => {
+                log::warn!("No live transcript file: {e:#}");
+                None
+            }
+        };
         let shared = Arc::new(Mutex::new(Shared {
             activity: SpeakerActivity::new(diarizer.num_speakers(), diarizer.frame_ms()),
             turns: TurnBuilder::new(TurnConfig::default()),
@@ -244,6 +276,8 @@ impl Session {
             post_process_prompt_id: settings.post_process_prompt_id.clone(),
             cleaned: HashMap::new(),
             utterance_spans: Vec::new(),
+            stem,
+            live,
         }));
 
         let (diar_tx, diar_rx) = mpsc::channel::<Frame>();
@@ -253,7 +287,7 @@ impl Session {
             let s = shared.lock().unwrap();
             settings
                 .resolved_output_dir(app)
-                .join(format!("{}.wav", export::file_stem(&s.started_local)))
+                .join(format!("{}.wav", s.stem))
         });
         // meetscribe: the OpenAI final speaker pass needs the recording; without "save audio"
         // it goes to a temporary file
@@ -358,6 +392,11 @@ impl Session {
             turns.finish(activity)
         };
         emit_turn_events(app, &mut shared, events);
+        // meetscribe: the live file is complete; the final pass below must not append to it
+        let live_vtt = shared
+            .live
+            .take()
+            .map(|live| live.end(&shared.turns, &shared.speakers));
         let mut delays = shared.asr_delays_ms.clone();
         delays.sort_unstable();
         let pct = |p: f64| {
@@ -382,6 +421,20 @@ impl Session {
         }
         let info = meeting_info(&shared);
         let mut output = write_outputs(app, &self.settings, &shared, &info);
+        // meetscribe: the live transcript becomes the final one (final speakers and names)
+        if let Some(path) = live_vtt {
+            // (no file name in it: post-processing may still rename the meeting's files)
+            super::live::finalize(
+                &path,
+                &meeting_core::vtt::final_document(
+                    &shared.started_local,
+                    shared.turns.turns(),
+                    &shared.speakers,
+                    None,
+                ),
+            );
+            output.vtt_path = Some(path.to_string_lossy().into_owned());
+        }
         let history_id = add_to_history(app, &shared, &output);
         output.notes_path = write_notes(app, &shared, &output);
         // the worker takes it from here; it is gone only if it panicked
@@ -462,11 +515,12 @@ fn write_outputs(
 ) -> MeetingOutput {
     let mut out = MeetingOutput::default();
     let dir = settings.resolved_output_dir(app);
-    let stem = export::file_stem(&shared.started_local);
+    // meetscribe: the name reserved at start, shared with the live `.vtt`
+    let stem = shared.stem.clone();
     let result = (|| -> Result<()> {
         std::fs::create_dir_all(&dir)
             .with_context(|| format!("cannot create {}", dir.display()))?;
-        let md_path = unique_path(dir.join(format!("{stem}.md")));
+        let md_path = dir.join(format!("{stem}.md"));
         std::fs::write(
             &md_path,
             export::to_markdown(info, shared.turns.turns(), &shared.speakers),
@@ -640,7 +694,23 @@ pub(super) fn unique_path(path: PathBuf) -> PathBuf {
     (2..)
         .map(|i| path.with_file_name(format!("{stem} ({i}).{ext}")))
         .find(|p| !p.exists())
-        .expect("unbounded")
+        .unwrap_or(path)
+}
+
+/// meetscribe: a file stem none of whose files (`.md`, `.vtt`) exist yet: `stem`, `stem (2)`, …
+fn reserve_stem(dir: &Path, stem: &str) -> String {
+    let free = |s: &str| {
+        ["md", "vtt"]
+            .iter()
+            .all(|ext| !dir.join(format!("{s}.{ext}")).exists())
+    };
+    if free(stem) {
+        return stem.to_string();
+    }
+    (2..)
+        .map(|i| format!("{stem} ({i})"))
+        .find(|s| free(s))
+        .unwrap_or_else(|| stem.to_string())
 }
 
 fn apply_update(app: &AppHandle, shared: &Arc<Mutex<Shared>>, update: DiarUpdate, audio_end: u64) {

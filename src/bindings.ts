@@ -1049,6 +1049,12 @@ async meetingSetPostProcess(mode: PostProcessMode, promptId: string | null) : Pr
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * The AI instructions with this machine's meetings folder filled in.
+ */
+async meetingAiInstructions() : Promise<string> {
+    return await TAURI_INVOKE("meeting_ai_instructions");
+},
 async getMeetingSettings() : Promise<MeetingSettings> {
     return await TAURI_INVOKE("get_meeting_settings");
 },
@@ -1322,7 +1328,12 @@ sha256: string | null } } |
  * Already present on disk — a user-provided custom model, or one discovered
  * in a shared cache. Nothing to download.
  */
-"Local"
+"Local" | 
+/**
+ * meetscribe: runs on a remote service (OpenAI). Nothing to download or load; audio is
+ * sent to the service when it transcribes.
+ */
+"Cloud"
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
 export type OpenAiKeyStatus = { found: boolean; 
 /**
@@ -1331,20 +1342,25 @@ export type OpenAiKeyStatus = { found: boolean;
 source: string | null }
 export type OpenAiSettings = { 
 /**
- * OpenAI is the selected transcription "model": dictation goes through `transcribe_model`
- * instead of the local model (and meetings too, unless they pick their own model).
+ * Model behind the "OpenAI" entry: dictation, files and meeting text.
  */
-dictation: boolean; transcribe_model: string; diarize_model: string; 
+transcribe_model: string; 
 /**
- * After a meeting, re-label speakers from the whole recording (more accurate than live).
+ * Model that labels speakers in meetings.
  */
-final_pass: boolean; 
+diarize_model: string; 
 /**
  * Languages people speak (ISO 639-1), used when the language choice is "auto".
  */
 languages: string[]; 
 /**
- * Write AI meeting notes (summary, decisions, action items) next to the transcript.
+ * Meetings: after a meeting, re-label speakers from the whole recording (more accurate
+ * than live).
+ */
+final_pass: boolean; 
+/**
+ * Meetings: write AI meeting notes (summary, decisions, action items) next to the
+ * transcript.
  */
 notes: boolean; notes_model: string }
 export type OverlayPosition = "top" | "bottom"
@@ -1355,7 +1371,6 @@ export type OverlayPosition = "top" | "bottom"
  * streaming mode (that is driven purely by model capability).
  */
 export type OverlayStyle = "none" | "minimal" | "live"
-export type PromptOption = { id: string; name: string }
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PermissionAccess = "allowed" | "denied" | "unknown"
@@ -1397,6 +1412,7 @@ enabled: boolean; prompts: PromptOption[];
  */
 default_prompt_id: string | null }
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
+export type PromptOption = { id: string; name: string }
 /**
  * Recording phase events for windows that follow along (onboarding's Try it).
  */
