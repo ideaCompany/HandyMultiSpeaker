@@ -1036,6 +1036,21 @@
     "copied": "Copied",
     "languageAuto": "Automatic",
     "languageHint": "Language spoken in the meeting. Pick one if speech is transcribed in the wrong language; applies from the next sentence.",
-    "languageIgnored": "The current meeting model (Parakeet TDT) always detects the language itself, so this choice has no effect. To force a language, pick Nemotron 3.5 ASR or a Whisper model under Settings → Meetings → Meeting transcription model."
+    "languageIgnored": "The current meeting model (Parakeet TDT) always detects the language itself, so this choice has no effect. To force a language, pick Nemotron 3.5 ASR or a Whisper model under Settings → Meetings → Meeting transcription model.",
+    "postProcess": {
+      "label": "Post-processing",
+      "hint": "Let the post-processing model tidy up the transcript: remove hesitations and resolve self-corrections. The exact transcript is always kept.",
+      "mode": {
+        "off": "Off",
+        "at_end": "At the end of the meeting",
+        "continuous": "Continuously during the meeting"
+      },
+      "noPrompts": "No prompts yet",
+      "showOriginal": "Show original",
+      "disabledTitle": "Post-processing is turned off",
+      "disabledHelp": "To use it in meetings, open the main MeetScribe window and go to Settings → Advanced. Turn on Experimental Features, then turn on Post Processing in the Experimental group. After that, set a provider, model and API key on the Post Processing page that appears in the sidebar, and pick the option here again.",
+      "progress": "Cleaning up transcript… {{done}}/{{total}}",
+      "savedTo": "Cleaned transcript saved"
+    }
   }
 }

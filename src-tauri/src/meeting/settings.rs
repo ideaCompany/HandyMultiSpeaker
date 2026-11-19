@@ -51,6 +51,18 @@ pub enum DiarizerBackend {
     PythonSidecar,
 }
 
+/// When a meeting's transcript is cleaned up by the post-processing LLM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum PostProcessMode {
+    #[default]
+    Off,
+    /// Once, after the meeting is stopped.
+    AtEnd,
+    /// At an interval while the meeting runs, then the rest when it stops.
+    Continuous,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct MeetingSettings {
@@ -67,6 +79,9 @@ pub struct MeetingSettings {
     pub diarizer_backend: DiarizerBackend,
     /// Spoken-language hint for meeting transcription: "auto" or an ISO 639-1 code.
     pub language: String,
+    pub post_process_mode: PostProcessMode,
+    /// Post-processing prompt for meetings; `None` = the prompt selected for dictation.
+    pub post_process_prompt_id: Option<String>,
 }
 
 impl Default for MeetingSettings {
@@ -80,6 +95,8 @@ impl Default for MeetingSettings {
             write_json: true,
             diarizer_backend: DiarizerBackend::Auto,
             language: "auto".to_string(),
+            post_process_mode: PostProcessMode::Off,
+            post_process_prompt_id: None,
         }
     }
 }
@@ -209,5 +226,7 @@ mod tests {
         assert!(!s.save_audio);
         assert_eq!(s.diarizer_backend, DiarizerBackend::Auto);
         assert_eq!(s.language, "auto");
+        assert_eq!(s.post_process_mode, PostProcessMode::Off);
+        assert_eq!(s.post_process_prompt_id, None);
     }
 }

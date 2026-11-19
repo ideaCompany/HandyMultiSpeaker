@@ -7,6 +7,7 @@
 
 pub mod language;
 pub mod model;
+pub mod postprocess;
 pub mod session;
 pub mod settings;
 pub mod sidecar;
@@ -14,7 +15,7 @@ pub mod sidecar;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use meeting_core::{SpeakerMap, StreamingDiarizer, Turn};
+use meeting_core::{StreamingDiarizer, Turn};
 use serde::Serialize;
 use specta::Type;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -30,7 +31,7 @@ enum State {
     Idle,
     /// Loading models / opening the microphone.
     Starting,
-    Running(Session),
+    Running(Box<Session>),
     /// Draining workers and writing files.
     Stopping,
 }
@@ -85,18 +86,21 @@ pub struct TurnDto {
     pub end_ms: f64,
     pub text: String,
     pub locked: bool,
+    /// The text as cleaned up by post-processing, once there is one.
+    pub cleaned: Option<String>,
 }
 
 impl TurnDto {
-    pub fn from_turn(t: &Turn, speakers: &SpeakerMap) -> Self {
+    pub fn from_turn(t: &Turn, shared: &Shared) -> Self {
         Self {
             id: t.id,
             speaker: t.speaker,
-            label: speakers.label(t.speaker),
+            label: shared.speakers.label(t.speaker),
             start_ms: t.start_ms as f64,
             end_ms: t.end_ms as f64,
             text: t.text.clone(),
             locked: t.locked,
+            cleaned: shared.cleaned.get(&t.id).cloned(),
         }
     }
 }
@@ -237,7 +241,7 @@ fn start(app: &AppHandle, m: Arc<MeetingManager>) {
         match result {
             Ok(session) => {
                 log::info!("Meeting started");
-                set_phase(&app, &m, State::Running(session));
+                set_phase(&app, &m, State::Running(Box::new(session)));
             }
             Err(e) => {
                 log::error!("Could not start meeting: {e:#}");
@@ -393,10 +397,7 @@ pub fn meeting_turns(app: AppHandle) -> Vec<TurnDto> {
     match &*guard {
         State::Running(s) => {
             let s = s.shared.lock().unwrap();
-            s.turns
-                .turns()
-                .map(|t| TurnDto::from_turn(t, &s.speakers))
-                .collect()
+            s.turns.turns().map(|t| TurnDto::from_turn(t, &s)).collect()
         }
         _ => Vec::new(),
     }
